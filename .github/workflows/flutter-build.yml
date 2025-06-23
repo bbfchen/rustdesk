@@ -17,13 +17,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
-      - name: Debug: Show hbb_common submodule source and latest commit
-        run: |
-          echo "🔍 Submodule 'libs/hbb_common' remote and commit:"
-          cd libs/hbb_common
-          git remote -v
-          git log -1
+          
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2.12.0
