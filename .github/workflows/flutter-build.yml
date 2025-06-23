@@ -91,7 +91,7 @@ jobs:
         with:
           submodules: recursive
           
-      - name: Debug: Show hbb_common submodule source and latest commit
+      - name: Debug- Show hbb_common submodule source and latest commit
         run: |
           echo "🔍 Submodule 'libs/hbb_common' remote and commit:"
           cd libs/hbb_common
