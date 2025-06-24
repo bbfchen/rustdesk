@@ -1768,9 +1768,7 @@ build-rustdesk-ipk:
 
     - name: Maximize build space
       run: |
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc /usr/local/lib/android /usr/share/dotnet
         sudo apt-get update -y
         sudo apt-get install -y opkg-utils nasm
         if [[ "${{ matrix.job.arch }}" == "x86_64" ]]; then
@@ -1802,14 +1800,12 @@ build-rustdesk-ipk:
     - name: Extract Debian Package
       run: |
         mkdir -p ./Release/rustdesk
-        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk
+        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk || exit 1
 
     - name: Create IPK Package Structure
       run: |
-        mkdir -p ipk/usr/bin
-        mkdir -p ipk/usr/lib
-        mkdir -p ipk/CONTROL
-        cp -r ./Release/rustdesk/usr/bin/* ipk/usr/bin/
+        mkdir -p ipk/usr/bin ipk/usr/lib ipk/CONTROL
+        cp -r ./Release/rustdesk/usr/bin/* ipk/usr/bin/ || true
         cp -r ./Release/rustdesk/usr/lib/* ipk/usr/lib/ || true
         cat << EOF > ipk/CONTROL/control
 Package: rustdesk
@@ -1818,12 +1814,15 @@ Architecture: ${{ matrix.job.ipk_arch }}
 Maintainer: RustDesk Team <info@rustdesk.com>
 Description: RustDesk remote desktop software (Flutter UI)
 Depends: libgtk-3-0, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0, libpulse0, libva2
+Section: network
+Priority: optional
+Installed-Size: 50000
 EOF
 
     - name: Build IPK Package
       run: |
-        opkg-build -o root -g root ipk ./ipk
-        mv ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
+        opkg-build -o root -g root ./ipk || exit 1
+        mv ./ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk || exit 1
 
     - name: Publish IPK Package
       if: env.UPLOAD_ARTIFACT == 'true'
