@@ -1800,13 +1800,13 @@ build-rustdesk-ipk:
     - name: Extract Debian Package
       run: |
         mkdir -p ./Release/rustdesk
-        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk || exit 1
+        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk || { echo "Failed to extract Debian package"; exit 1; }
 
     - name: Create IPK Package Structure
       run: |
         mkdir -p ipk/usr/bin ipk/usr/lib ipk/CONTROL
-        cp -r ./Release/rustdesk/usr/bin/* ipk/usr/bin/ || true
-        cp -r ./Release/rustdesk/usr/lib/* ipk/usr/lib/ || true
+        cp -r ./Release/rustdesk/usr/bin/* ipk/usr/bin/ 2>/dev/null || true
+        cp -r ./Release/rustdesk/usr/lib/* ipk/usr/lib/ 2>/dev/null || true
         cat << EOF > ipk/CONTROL/control
 Package: rustdesk
 Version: ${{ env.VERSION }}
@@ -1816,13 +1816,17 @@ Description: RustDesk remote desktop software (Flutter UI)
 Depends: libgtk-3-0, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0, libpulse0, libva2
 Section: network
 Priority: optional
-Installed-Size: 50000
+Installed-Size: $(du -sk ipk/usr | awk '{print $1}')
 EOF
 
     - name: Build IPK Package
       run: |
-        opkg-build -o root -g root ./ipk || exit 1
-        mv ./ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk || exit 1
+        if [ -d ./ipk ]; then
+          opkg-build -o root -g root ./ipk || { echo "Failed to build IPK package"; exit 1; }
+          mv ./ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk || { echo "Failed to move IPK file"; exit 1; }
+        else
+          echo "IPK directory not found"; exit 1;
+        fi
 
     - name: Publish IPK Package
       if: env.UPLOAD_ARTIFACT == 'true'
