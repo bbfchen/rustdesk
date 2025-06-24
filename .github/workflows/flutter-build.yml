@@ -1733,6 +1733,114 @@ jobs:
           files: |
             res/rustdesk-${{ env.VERSION }}*.zst
 
+  build-rustdesk-ipk:
+  needs: [generate-bridge, build-rustdesk-linux]
+  name: Build RustDesk IPK ${{ matrix.job.target }}
+  runs-on: ${{ matrix.job.on }}
+  if: ${{ inputs.upload-artifact }}
+  strategy:
+    fail-fast: false
+    matrix:
+      job:
+        - {
+            arch: x86_64,
+            target: x86_64-unknown-linux-gnu,
+            distro: ubuntu18.04,
+            on: ubuntu-22.04,
+            ipk_arch: amd64,
+            vcpkg-triplet: x64-linux,
+          }
+        - {
+            arch: aarch64,
+            target: aarch64-unknown-linux-gnu,
+            distro: ubuntu18.04,
+            on: ubuntu-22.04-arm,
+            ipk_arch: arm64,
+            vcpkg-triplet: arm64-linux,
+          }
+  steps:
+    - name: Export GitHub Actions cache environment variables
+      uses: actions/github-script@v6
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+    - name: Maximize build space
+      run: |
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/share/dotnet
+        sudo apt-get update -y
+        sudo apt-get install -y opkg-utils nasm
+        if [[ "${{ matrix.job.arch }}" == "x86_64" ]]; then
+          sudo apt-get install -y qemu-user-static
+        fi
+
+    - name: Checkout source code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set Swap Space
+      if: ${{ matrix.job.arch == 'x86_64' }}
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 12
+
+    - name: Free Space
+      run: |
+        df -h
+        free -m
+
+    - name: Download RustDesk Binary
+      uses: actions/download-artifact@master
+      with:
+        name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb
+        path: ./Release
+
+    - name: Extract Debian Package
+      run: |
+        mkdir -p ./Release/rustdesk
+        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk
+
+    - name: Create IPK Package Structure
+      run: |
+        mkdir -p ipk/usr/bin
+        mkdir -p ipk/usr/lib
+        mkdir -p ipk/CONTROL
+        cp -r ./Release/rustdesk/usr/bin/* ipk/usr/bin/
+        cp -r ./Release/rustdesk/usr/lib/* ipk/usr/lib/ || true
+        cat << EOF > ipk/CONTROL/control
+Package: rustdesk
+Version: ${{ env.VERSION }}
+Architecture: ${{ matrix.job.ipk_arch }}
+Maintainer: RustDesk Team <info@rustdesk.com>
+Description: RustDesk remote desktop software (Flutter UI)
+Depends: libgtk-3-0, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0, libpulse0, libva2
+EOF
+
+    - name: Build IPK Package
+      run: |
+        opkg-build -o root -g root ipk
+        mv ipk/rustdesk_${{ env.VERSION }}_${{ matrix.job.ipk_arch }}.ipk rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
+
+    - name: Publish IPK Package
+      if: env.UPLOAD_ARTIFACT == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        prerelease: true
+        tag_name: ${{ env.TAG_NAME }}
+        files: |
+          rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
+
+    - name: Upload IPK Artifact
+      uses: actions/upload-artifact@master
+      if: env.UPLOAD_ARTIFACT == 'true'
+      with:
+        name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
+        path: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
+        
   build-rustdesk-linux-sciter:
     if: ${{ inputs.upload-artifact }}
     runs-on: ${{ matrix.job.on }}
