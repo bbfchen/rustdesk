@@ -1733,7 +1733,7 @@ jobs:
           files: |
             res/rustdesk-${{ env.VERSION }}*.zst
 
-  build-rustdesk-ipk:
+build-rustdesk-ipk:
   needs: [generate-bridge, build-rustdesk-linux]
   name: Build RustDesk IPK ${{ matrix.job.target }}
   runs-on: ${{ matrix.job.on }}
@@ -1822,8 +1822,8 @@ EOF
 
     - name: Build IPK Package
       run: |
-        opkg-build -o root -g root ipk
-        mv ipk/rustdesk_${{ env.VERSION }}_${{ matrix.job.ipk_arch }}.ipk rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
+        opkg-build -o root -g root ipk ./ipk
+        mv ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk
 
     - name: Publish IPK Package
       if: env.UPLOAD_ARTIFACT == 'true'
