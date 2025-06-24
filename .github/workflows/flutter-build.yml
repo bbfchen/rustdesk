@@ -1800,13 +1800,15 @@ build-rustdesk-ipk:
     - name: Extract Debian Package
       run: |
         mkdir -p ./Release/rustdesk
-        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk || { echo "Failed to extract Debian package"; exit 1; }
+        dpkg-deb -x ./Release/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.deb ./Release/rustdesk || { echo "Error: Failed to extract Debian package"; exit 1; }
 
     - name: Create IPK Package Structure
       run: |
-        mkdir -p ipk/usr/bin ipk/usr/lib ipk/CONTROL
+        mkdir -p ipk/DEBIAN ipk/usr/bin ipk/usr/lib ipk/CONTROL
         cp -r ./Release/rustdesk/usr/bin/* ipk/usr/bin/ 2>/dev/null || true
         cp -r ./Release/rustdesk/usr/lib/* ipk/usr/lib/ 2>/dev/null || true
+        # Symlink CONTROL to DEBIAN for compatibility with some OpenWrt tools
+        ln -sf ipk/CONTROL ipk/DEBIAN
         cat << EOF > ipk/CONTROL/control
 Package: rustdesk
 Version: ${{ env.VERSION }}
@@ -1822,10 +1824,15 @@ EOF
     - name: Build IPK Package
       run: |
         if [ -d ./ipk ]; then
-          opkg-build -o root -g root ./ipk || { echo "Failed to build IPK package"; exit 1; }
-          mv ./ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk || { echo "Failed to move IPK file"; exit 1; }
+          opkg-build -o root -g root ./ipk || { echo "Error: Failed to build IPK package"; exit 1; }
+          # Verify IPK file exists before moving
+          if [ -f ./ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk ]; then
+            mv ./ipk/rustdesk_${{ env.VERSION }}-${{ matrix.job.ipk_arch }}.ipk ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.ipk || { echo "Error: Failed to move IPK file"; exit 1; }
+          else
+            echo "Error: IPK file not found after build"; exit 1;
+          fi
         else
-          echo "IPK directory not found"; exit 1;
+          echo "Error: IPK directory not found"; exit 1;
         fi
 
     - name: Publish IPK Package
