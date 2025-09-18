@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
     env:
       CARGO_TERM_COLOR: always
-      # 讓 vcpkg-rs/linker 知道我們要 static triplet
+      # 指定靜態 triplet，並讓 vcpkg-rs 也用同一個設定
       VCPKGRS_TRIPLET: x64-windows-static
       VCPKGRS_DYNAMIC: "0"
       VCPKG_DEFAULT_TRIPLET: x64-windows-static
@@ -24,33 +24,35 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # 下載並 bootstrap vcpkg（提供 vcpkg.exe 與 VCPKG_ROOT）
+      # 下載並 bootstrap vcpkg；偵測到 vcpkg.json 後會進入 manifest 模式
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
 
-      # 明確安裝四個靜態相依（最關鍵修正）
-      - name: Install codec deps via vcpkg (static)
+      # ★ 修正：manifest 模式只需要執行 install，指定 triplet，不要列套件名
+      - name: Install deps via vcpkg (manifest, static triplet)
         shell: powershell
+        working-directory: ${{ github.workspace }}
         run: |
           $vcpkg = "$env:VCPKG_ROOT\vcpkg.exe"
-          & $vcpkg install "libvpx:x64-windows-static" "libyuv:x64-windows-static" "opus:x64-windows-static" "aom:x64-windows-static"
-          # 確認 include 真的在這裡（給日後除錯）
-          Get-ChildItem "$env:VCPKG_ROOT\installed\x64-windows-static\include" | Select-Object -First 10
+          & $vcpkg install --triplet x64-windows-static
+          # 可選：列一下 include 目錄確認
+          if (Test-Path "$env:VCPKG_ROOT\installed\x64-windows-static\include") {
+            Get-ChildItem "$env:VCPKG_ROOT\installed\x64-windows-static\include" | Select-Object -First 20
+          }
 
-      # 安裝 LLVM 並設置 LIBCLANG_PATH（給 bindgen）
+      # LLVM（給 bindgen）
       - name: Install LLVM
         shell: powershell
         run: |
           choco install -y llvm
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
-      # 下載 Sciter DLL，放到 Debug/Release 兩個輸出資料夾
+      # 下載 Sciter DLL 到 debug/release
       - name: Download Sciter DLL
         shell: bash
         run: |
           curl -L -o sciter.dll https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x64/sciter.dll
-          mkdir -p target/debug
-          mkdir -p target/release
+          mkdir -p target/debug target/release
           mv -f sciter.dll target/release/
           cp -f target/release/sciter.dll target/debug/
 
