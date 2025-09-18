@@ -10,21 +10,34 @@ jobs:
     runs-on: windows-latest
     env:
       CARGO_TERM_COLOR: always
+      # 讓 vcpkg-rs/linker 知道我們要 static triplet
+      VCPKGRS_TRIPLET: x64-windows-static
+      VCPKGRS_DYNAMIC: "0"
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive   # RustDesk 使用 submodules，必須遞迴抓
+          submodules: recursive
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # 依 vcpkg.json 自動安裝 (libvpx/libyuv/opus/aom 等)
-      - name: Setup vcpkg and install deps
+      # 下載並 bootstrap vcpkg（提供 vcpkg.exe 與 VCPKG_ROOT）
+      - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
 
-      # 安裝 LLVM 並設定 LIBCLANG_PATH（給 bindgen）
+      # 明確安裝四個靜態相依（最關鍵修正）
+      - name: Install codec deps via vcpkg (static)
+        shell: powershell
+        run: |
+          $vcpkg = "$env:VCPKG_ROOT\vcpkg.exe"
+          & $vcpkg install "libvpx:x64-windows-static" "libyuv:x64-windows-static" "opus:x64-windows-static" "aom:x64-windows-static"
+          # 確認 include 真的在這裡（給日後除錯）
+          Get-ChildItem "$env:VCPKG_ROOT\installed\x64-windows-static\include" | Select-Object -First 10
+
+      # 安裝 LLVM 並設置 LIBCLANG_PATH（給 bindgen）
       - name: Install LLVM
         shell: powershell
         run: |
@@ -39,20 +52,16 @@ jobs:
           mkdir -p target/debug
           mkdir -p target/release
           mv -f sciter.dll target/release/
-          # 同時複製一份給 debug
           cp -f target/release/sciter.dll target/debug/
 
-      # 先建 Debug
       - name: Build (debug)
         shell: bash
         run: cargo build
 
-      # 再建 Release
       - name: Build (release)
         shell: bash
         run: cargo build --release
 
-      # 上傳 Debug 產物
       - name: Upload artifact (debug)
         uses: actions/upload-artifact@v4
         with:
@@ -61,7 +70,6 @@ jobs:
             target/debug/rustdesk.exe
             target/debug/sciter.dll
 
-      # 上傳 Release 產物
       - name: Upload artifact (release)
         uses: actions/upload-artifact@v4
         with:
