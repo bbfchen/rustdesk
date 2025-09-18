@@ -8,7 +8,6 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-
     env:
       CARGO_TERM_COLOR: always
 
@@ -16,37 +15,54 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive   # 重要：RustDesk 有子模組
+          submodules: recursive   # RustDesk 使用 submodules，必須遞迴抓
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # 使用 vcpkg（repo 根目錄含 vcpkg.json，會自動依 manifest 安裝）
+      # 依 vcpkg.json 自動安裝 (libvpx/libyuv/opus/aom 等)
       - name: Setup vcpkg and install deps
         uses: lukka/run-vcpkg@v11
 
-      # 安裝 LLVM / 設定 LIBCLANG_PATH（給 bindgen 用）
+      # 安裝 LLVM 並設定 LIBCLANG_PATH（給 bindgen）
       - name: Install LLVM
+        shell: powershell
         run: |
           choco install -y llvm
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
-        shell: powershell
 
-      # 下載 Sciter 動態庫（Windows 版），放到 release 目錄一起打包
+      # 下載 Sciter DLL，放到 Debug/Release 兩個輸出資料夾
       - name: Download Sciter DLL
+        shell: bash
         run: |
           curl -L -o sciter.dll https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x64/sciter.dll
+          mkdir -p target/debug
           mkdir -p target/release
-          move sciter.dll target/release/
-        shell: bash
+          mv -f sciter.dll target/release/
+          # 同時複製一份給 debug
+          cp -f target/release/sciter.dll target/debug/
 
-      # 以 release 模式建置
+      # 先建 Debug
+      - name: Build (debug)
+        shell: bash
+        run: cargo build
+
+      # 再建 Release
       - name: Build (release)
-        run: cargo build --release
         shell: bash
+        run: cargo build --release
 
-      # 上傳產物：exe + sciter.dll（放在同一資料夾即可執行）
-      - name: Upload artifact
+      # 上傳 Debug 產物
+      - name: Upload artifact (debug)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-windows-debug
+          path: |
+            target/debug/rustdesk.exe
+            target/debug/sciter.dll
+
+      # 上傳 Release 產物
+      - name: Upload artifact (release)
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-windows-release
