@@ -1,0 +1,101 @@
+name: Build Android APK (Flutter + Rust)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ master, work-1.4.2 ]   # 需要其他分支也可加
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+
+    env:
+      CARGO_TERM_COLOR: always
+      ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}   # 由 setup-android 提供
+      NDK_VERSION: 26.1.10909125                  # NDK r26d，與多數專案相容
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ---- Java / Android SDK / NDK ----
+      - name: Setup Java (AGP 8 需 Java 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK/NDK/CMake & accept licenses
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" \
+                     "build-tools;34.0.0" \
+                     "platforms;android-34" \
+                     "ndk;${NDK_VERSION}" \
+                     "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+
+      # ---- Rust 交叉編譯工具鏈 ----
+      - name: Install Rust + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      # ---- Flutter ----
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"        # 如需固定版本可填 3.24.x
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Flutter doctor (optional)
+        working-directory: flutter
+        run: flutter doctor -v
+
+      # ---- Build Debug（方便快速測試）----
+      - name: Build debug APK
+        working-directory: flutter
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          flutter build apk --debug
+
+      # ---- Build Release（分 ABI）----
+      - name: Build release APK (split per ABI)
+        working-directory: flutter
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          # arm64-v8a / armeabi-v7a / x86_64
+          flutter build apk --release --split-per-abi
+
+      # ---- 上傳產物 ----
+      - name: Upload debug artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: flutter/build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Upload release artifacts (per-ABI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: |
+            flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            flutter/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            flutter/build/app/outputs/flutter-apk/app-x86_64-release.apk
